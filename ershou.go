@@ -36,29 +36,33 @@ func merge_multiline_strings(input string, split string) string {
 	return strings.Join(strings.Fields(line), " ")
 }
 
-func GetHouseInfo(id string) (HouseInfo, bool) {
+func GetHouseInfo(id string) (*HouseInfo, error) {
 	var cur HouseInfo
 	cur.ID = id
 	cur.Date = time.Now().Format("20060102")
 
 	// Request the HTML page. https://bj.ke.com/ershoufang/101124058522.html
 	addr := fmt.Sprintf("https://bj.ke.com/ershoufang/%s.html", id)
-	res, err := http.Get(addr)
+	client := &http.Client{
+		Timeout: 2 * time.Second, // Set a timeout of 2 seconds
+	}
+	res, err := client.Get(addr)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	defer res.Body.Close()
+
 	if res.StatusCode == 404 {
-		return cur, false
+		return nil, nil
 	}
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	// price := doc.Find(".sellDetailPage .overview .content .price-container")
@@ -102,7 +106,7 @@ func GetHouseInfo(id string) (HouseInfo, bool) {
 	}
 	cur.Image = imgsrc
 
-	return cur, true
+	return &cur, nil
 
 }
 
@@ -153,8 +157,16 @@ func main() {
 		defer wg.Done()
 		for id, houseID := range houseIds {
 			if id%parallel == partition {
-				house, valid := GetHouseInfo(houseID)
-				if valid {
+				house, err := GetHouseInfo(houseID)
+				if err != nil {
+					house, err = GetHouseInfo(houseID)
+					if err != nil {
+						fmt.Print(err)
+						continue
+					}
+				}
+
+				if house != nil {
 					fmt.Printf("%s\n", house.ToCSV())
 				}
 			}
